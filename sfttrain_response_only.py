@@ -25,19 +25,18 @@ import unsloth
 from unsloth import FastLanguageModel
 import torch
 
-max_seq_length = 1536 # TinyLlama handles 2048 natively. Unsloth for tinyllama: https://huggingface.co/unsloth/tinyllama
+max_seq_length = 1536
 dtype = None
 load_in_4bit = True
 
 model, tokenizer = FastLanguageModel.from_pretrained(
-    # model_name = "unsloth/tinyllama-bnb-4bit",
     model_name = "unsloth/Llama-3.2-1B-Instruct-bnb-4bit",
     max_seq_length = max_seq_length,
     dtype = dtype,
     load_in_4bit = load_in_4bit,
 )
 
-# Add LoRA adapters
+#Add LoRA adapters
 model = FastLanguageModel.get_peft_model(
     model,
     r = 8, 
@@ -64,9 +63,6 @@ alpaca_prompt = """Below is an prompt that includes question and context. Write 
 ### Response:
 {}"""
 
-# 7b response text: prompt(input context) +### Response<response> -> tokens abc
-# sft: 1B asbdiawhdiaubwd
-# 7b response - 1b response = loss of response
 
 EOS_TOKEN = tokenizer.eos_token
 
@@ -74,7 +70,7 @@ def formatting_prompts_func(examples):
     texts = []
     for inp, ctx, resp in zip(examples["input"], examples["context"], examples["response"]):
 
-        # combine input + context
+        #combine input + context
         prompt = inp
         if ctx and len(str(ctx).strip()) > 0:
             prompt = f"{inp}\n{ctx}"
@@ -82,10 +78,10 @@ def formatting_prompts_func(examples):
         text = alpaca_prompt.format(prompt, resp) + EOS_TOKEN
         texts.append(text)
 
-    # for dataset.map we return a dict
+    #for dataset.map return a dict
     return {"text": texts}
 
-# Load thy dataset
+#Load thy dataset
 dataset = load_dataset("json", data_files="rolling_rag_gemma_qwen7b_q555.json", split="train")
 dataset = dataset.map(formatting_prompts_func, batched=True, load_from_cache_file=False)
 
@@ -105,7 +101,7 @@ def tokenize_function(examples):
 dataset = dataset.map(
     tokenize_function,
     batched=True,
-    remove_columns=dataset.column_names,  # keep only model-ready fields
+    remove_columns=dataset.column_names,
 )
 
 from dataclasses import dataclass
@@ -117,7 +113,7 @@ class CompletionOnlyCollator:
     response_template: str = "\n### Response:"
 
     def __post_init__(self):
-        # tokenize the delimiter once
+        #tokenize the delimiter
         self.response_template = "\n### Response:"
 
     def __call__(self, batch):
@@ -128,10 +124,9 @@ class CompletionOnlyCollator:
         for ex_idx, ex in enumerate(batch):
             ids = ex["input_ids"]
 
-            # ✅ safely get attention_mask or create a default one
             mask = ex.get("attention_mask", None)
             if mask is None:
-                # no mask in dataset → assume all tokens are non-padding
+                #no mask in dataset → assume all tokens are non-padding
                 mask = [1] * len(ids)
 
             if isinstance(ids, torch.Tensor):
@@ -141,40 +136,34 @@ class CompletionOnlyCollator:
 
             labels = ids.copy()
 
-            # 1) find "### Response:" by decoding and searching for the string
+            #find "### Response:"
             full_text = self.tokenizer.decode(ids)
             response_start_idx = full_text.find(self.response_template)
             
             if response_start_idx == -1:
-                # no marker → mask everything
+                #no marker → mask everything
                 labels = [-100] * len(labels)
                 if ex_idx == 0:
-                    print(f"[DEBUG] No response marker found in text!")
-                    # print(f"[DEBUG] Text preview: {full_text[:200]}...")
+                    print(f"[DEBUG] No response marker found in text")
             else:
-                # Find the token position where response starts
-                # Encode text up to response marker, get token count
+                #find where response starts
                 text_before_response = full_text[:response_start_idx + len(self.response_template)]
                 tokens_before = len(self.tokenizer.encode(text_before_response, add_special_tokens=False))
                 
                 if ex_idx == 0:
                     print(f"[DEBUG] Response marker found in text at char position: {response_start_idx}")
-                    # print(f"[DEBUG] Token position after marker: {tokens_before}")
                 
-                # 2) mask everything before the response
+                #mask
                 for j in range(tokens_before):
                     labels[j] = -100
 
-            # 3) also mask padding tokens (attention_mask == 0)
+            #mask padding tokens
             for j, m in enumerate(mask):
                 if m == 0:
                     labels[j] = -100
 
-            # DEBUG: Show label comparison
             masked_count = sum(1 for l in labels if l == -100)
             total_tokens = len(labels)
-            # print(f"  Masked tokens: {masked_count}/{total_tokens} ({100*masked_count/total_tokens:.1f}%)")
-
             input_ids_list.append(torch.tensor(ids))
             attention_masks.append(torch.tensor(mask))
             labels_list.append(torch.tensor(labels))
@@ -191,14 +180,14 @@ from unsloth.chat_templates import train_on_responses_only
 
 data_collator = CompletionOnlyCollator(
     tokenizer = tokenizer,
-    response_template = "\n### Response:",  # matches your template
+    response_template = "\n### Response:",
 )
 
 trainer = SFTTrainer(
     model = model,
     tokenizer = tokenizer,
-    train_dataset = dataset,       # already tokenized
-    data_collator = data_collator, # <-- response-only loss logic
+    train_dataset = dataset,
+    data_collator = data_collator,
     max_seq_length = max_seq_length,
     dataset_num_proc = 2,
     packing = False,
@@ -218,35 +207,16 @@ trainer = SFTTrainer(
         output_dir = "outputs",
     ),
 )
-# batch = [dataset[0]]
-# masked = data_collator(batch)
-
-# print("\n" + "="*80)
-# print("FULL INPUT:\n", tokenizer.decode(masked["input_ids"][0]))
-
-# space_id = tokenizer(" ", add_special_tokens=False).input_ids[0]
-# decoded_labels = tokenizer.decode([
-#     tok if tok != -100 else space_id
-#     for tok in masked["labels"][0].tolist()
-# ])
-# print("\nLABEL TEXT (should be just the response):\n", decoded_labels)
-
-# # Additional verification: show which tokens are being trained on
-# labels_tensor = masked["labels"][0].tolist()
-# trained_token_ids = [tok for tok in labels_tensor if tok != -100]
-# print(f"\nTokens being trained on: {len(trained_token_ids)}/{len(labels_tensor)}")
-# print(f"Sample trained token IDs: {trained_token_ids[:20]}")
-# print("="*80 + "\n")
 trainer.train()
 
-# Save to GGUF
+#GGUF
 model.save_pretrained_merged(
-    "llama3.2-rag-v3--hf",  # output HF folder name
+    "llama3.2-rag-v4--hf",
     tokenizer,
     save_method="merged_16bit",
 )
 
-# Convert hf to gguf
+#hf to gguf
 """
 conda activate llama
 # change the version number
