@@ -1,0 +1,40 @@
+def chunk_words(filename, chunk_size=20):
+    # read the whole file
+    with open(filename, "r", encoding="utf-8") as f:
+        text = f.read()
+
+    # split text into words
+    words = text.split()
+
+    # make chunks
+    chunks = []
+    for i in range(0, len(words), chunk_size):
+        chunk = " ".join(words[i:i+chunk_size])
+        chunks.append(chunk)
+
+    return chunks
+
+chunks = chunk_words("vault.txt", 40)
+
+output_lines = []
+
+# rolling window logic
+for i in range(len(chunks) - 1):
+    if i == 0:
+        # first line: chunk1, chunk2
+        group = [chunks[0], chunks[1]]
+    else:
+        # subsequent lines: chunk i, i+1, i+2
+        if i + 2 < len(chunks):
+            group = [chunks[i], chunks[i+1], chunks[i+2]]
+        else:
+            break
+
+    # join with comma + space
+    output_lines.append(", ".join(group))
+
+# write output
+with open("3rolling_chunks.txt", "w", encoding="utf-8") as out:
+    out.write("\n".join(output_lines))
+
+
