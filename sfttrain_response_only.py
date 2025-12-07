@@ -40,12 +40,12 @@ model, tokenizer = FastLanguageModel.from_pretrained(
 # Add LoRA adapters
 model = FastLanguageModel.get_peft_model(
     model,
-    r = 32, # TinyLlama benefits from higher rank
+    r = 8, 
     target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
                       "gate_proj", "up_proj", "down_proj",
                     #   "embed_tokens", "lm_head",
                       ],
-    lora_alpha = 32,
+    lora_alpha = 16,
     lora_dropout = 0,
     bias = "none",
     use_gradient_checkpointing = False,
