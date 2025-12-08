@@ -1,6 +1,7 @@
 
 import json
 import argparse
+import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser(description="Evaluate")
 parser.add_argument("--file", default=None)
@@ -23,6 +24,7 @@ response_qwen = [item["response"] for item in data]
 
 
 running_total = 0
+scores = []
 for i in range(len(response_qwen)):
     qwen_split  = response_qwen[i].split()
     llama_split = response_llama[i].split()
@@ -32,6 +34,15 @@ for i in range(len(response_qwen)):
 
     intersection_size = len(qwen_set & llama_set)
     fraction = (intersection_size / len(qwen_set)) if qwen_set else 0
+    scores.append(fraction)
     running_total += fraction
 
+plt.scatter(range(len(scores)), scores)
+plt.title("Model Eval Score Scatter")
+plt.xlabel("Example Index")
+plt.ylabel("Score (0 to 1)")
+plt.ylim(0, 1)
+plt.grid(True)
+
+plt.show()
 print(f"Correctness: {running_total / len(response_qwen)}")
