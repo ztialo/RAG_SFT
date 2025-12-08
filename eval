@@ -37,12 +37,14 @@ for i in range(len(response_qwen)):
     scores.append(fraction)
     running_total += fraction
 
-plt.scatter(range(len(scores)), scores)
-plt.title("Model Eval Score Scatter")
-plt.xlabel("Example Index")
+
+
+plt.boxplot(scores, showmeans=True)
+plt.title("Trained Comparison: Qwen7B vs Trained")
 plt.ylabel("Score (0 to 1)")
 plt.ylim(0, 1)
 plt.grid(True)
 
 plt.show()
+
 print(f"Correctness: {running_total / len(response_qwen)}")
