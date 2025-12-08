@@ -5,7 +5,6 @@ from openai import OpenAI
 import argparse
 import json
 
-# ANSI escape codes for colors
 PINK = '\033[95m'
 CYAN = '\033[96m'
 YELLOW = '\033[93m'
@@ -20,32 +19,30 @@ def chunk_text_500_chars(text, chunk_size=500):
         chunks.append(text[start:end])
         start = end
     return chunks
-# Function to open a file and return its contents as a string
 def open_file(filepath):
     with open(filepath, 'r', encoding='utf-8') as infile:
         return infile.read()
 def file_to_array(filepath):
     with open(filepath, 'r', encoding='utf-8') as infile:
         return infile.readlines()
-# Function to get relevant context from the vault based on user input
+
 def get_relevant_context(rewritten_input, vault_embeddings, vault_content, top_k=2):
     if vault_embeddings.nelement() == 0:  # Check if the tensor has any elements
         return []
-    # Encode the rewritten input
+    #Encode the query
     input_embedding = ollama.embeddings(model='embeddinggemma:300m', prompt=rewritten_input)["embedding"]
-    # Compute cosine similarity between the input and vault embeddings
+    #cosine similarity between input and vault embeddings
     cos_scores = torch.cosine_similarity(torch.tensor(input_embedding).unsqueeze(0), vault_embeddings)
-    # Adjust top_k if it's greater than the number of available scores
+    #Adjust top_k
     top_k = min(top_k, len(cos_scores))
-    # Sort the scores and get the top-k indices
+    #top-k indices
     top_indices = torch.topk(cos_scores, k=top_k)[1].tolist()
-    # Get the corresponding context from the vault
+    #context from the vault
     relevant_context = [vault_content[idx].strip() for idx in top_indices]
     return relevant_context
 
 
 def ollama_chat(user_input, system_message, vault_embeddings, vault_content, ollama_model):
-    # Rewriting query if needed
     relevant_context = get_relevant_context(user_input, vault_embeddings, vault_content)
 
     context_str = "\n".join(relevant_context)
@@ -68,26 +65,26 @@ def ollama_chat(user_input, system_message, vault_embeddings, vault_content, oll
     answer = response.choices[0].message.content.strip()
     return answer, relevant_context
 
-# Parse command-line arguments
+#Parse
 print(NEON_GREEN + "Parsing command-line arguments..." + RESET_COLOR)
 parser = argparse.ArgumentParser(description="Ollama Chat")
 parser.add_argument("--model", default="llama3.2:1b", help="Ollama model to use (default: llama3.2:1b)")
 parser.add_argument("--question_file", default=None, help="Path to file containing list of questions")
 args = parser.parse_args()
 
-# Configuration for the Ollama API client
+#Configuration
 print(NEON_GREEN + "Initializing Ollama API client..." + RESET_COLOR)
 client = OpenAI(base_url="http://localhost:11434/v1", api_key="dummy")
 
 
-# Load the vault content
+#Load content
 print(NEON_GREEN + "Loading vault content..." + RESET_COLOR)
 vault_content = []
 if os.path.exists("vault.txt"):
     with open("vault.txt", "r", encoding='utf-8') as vault_file:
         vault_content = vault_file.readlines()
 
-# Generate embeddings for the vault content using Ollama
+#Generate embeddings
 if not vault_content:
     raise ValueError("vault.txt is empty or missing.")
 
@@ -97,7 +94,7 @@ for content in vault_content:
     response = ollama.embeddings(model='embeddinggemma:300m', prompt=content)
     vault_embeddings.append(response["embedding"])
 
-# Convert to tensor and print embeddings
+#Convert to tensor and print embeddings
 print("Converting embeddings to tensor...")
 vault_embeddings_tensor = torch.tensor(vault_embeddings) 
 print("Embeddings for each line in the vault:")
@@ -142,7 +139,7 @@ if questions:
             "response": answer
         })
 
-    # Write JSON file
+    #JSON file
     output_path = "rolling_rag_mymodel_q555.json"
     with open(output_path, "w", encoding="utf-8") as outfile:
         json.dump(results, outfile, indent=4)
