@@ -1,0 +1,50 @@
+
+import json
+import argparse
+import matplotlib.pyplot as plt
+
+parser = argparse.ArgumentParser(description="Evaluate")
+parser.add_argument("--file", default=None)
+args = parser.parse_args()
+
+if args.file:
+    with open(args.file, "r") as f:
+        data = json.load(f)
+
+input_llama = [item["input"] for item in data]
+context_llama = [item["context"] for item in data]
+response_llama = [item["response"] for item in data]
+
+with open("rolling_rag_gemma_qwen7b_q555.json", "r") as f:
+    data = json.load(f)
+
+input_qwen = [item["input"] for item in data]
+context_qwen = [item["context"] for item in data]
+response_qwen = [item["response"] for item in data]
+
+
+running_total = 0
+scores = []
+for i in range(len(response_qwen)):
+    qwen_split  = response_qwen[i].split()
+    llama_split = response_llama[i].split()
+
+    qwen_set = set(qwen_split)
+    llama_set = set(llama_split)
+
+    intersection_size = len(qwen_set & llama_set)
+    fraction = (intersection_size / len(qwen_set)) if qwen_set else 0
+    scores.append(fraction)
+    running_total += fraction
+
+
+
+plt.boxplot(scores, showmeans=True)
+plt.title("Trained Comparison: Qwen7B vs Trained")
+plt.ylabel("Score (0 to 1)")
+plt.ylim(0, 1)
+plt.grid(True)
+
+plt.show()
+
+print(f"Correctness: {running_total / len(response_qwen)}")
